@@ -1,0 +1,265 @@
+---
+title: "Stplanr: Ulaşım Planlama (Transport Planning) Paketi"
+author: "Buse Demir"
+date: "09 01 2022"
+output: html_document
+---
+
+# MAKALE
+The R Journal: article published in 2018, volume 10:2
+
+stplanr: A Package for Transport Planning
+
+Robin Lovelace and Richard Ellison 
+
+url->[https://journal.r-project.org/archive/2018/RJ-2018-053/RJ-2018-053.pdf]
+
+# Paketin Kurulması ve İçeriği
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(stplanr)
+
+```
+
+
+Stplanr paketi, R ile sürdürülebilir ulaşım planlaması için kullanılan bir pakettir.
+
+A noktasından B noktasına en iyi ulaşım planlamasını ve modellemesini yapmak için kullanılır.
+
+* Esnek ve çeşitli veri formatlarını işleyebilir.
+* Ölçeklenebilir tek sokaklardan, büyük şehirlere ve bölgelere kadar birden çok coğrafi düzeyde çalışabilir.
+* Bir dizi veri kümesi üzerinde test edilmiş ve çalışabilen gerçek dünya projelerinde kullanılabilir.
+
+# AMAÇ
+
+1. Ulaşım altyapısına ve davranışına ilişkin verilere erişme ve bunları işleme 
+2. Ulaşım ağının analizi ve görselleştirilmesi 
+3. Başlangıç-hedef verilerinin analizi ve ortaya çıkan görselleştirme (‘istenen çizgiler (desire lines)’)
+4. Yönlendirme hizmetleri aracılığıyla yollara ve diğer kılavuzlara istek hatlarının atanması
+5. Toplama aktarım ağı genelindeki segmentlerdeki toplam akış seviyelerini tahmin etmek için kullanılan rotalar
+6. Ulaşım tahmini için modellerin geliştirilmesi 
+7. Ulaşım altyapısından  etkilenen “yakalanma alanlarının” hesaplanması
+
+
+# Ulaşım Verisi Türleri
+
+1. Başlangıç-hedef rotaları arasında seyahat eden kişi sayısının rapor ediliği başlangıç-hedef (OD) verileri  (OD veri setleri genellikle veri çerçeveleri (data frame) olarak gösterilir) 
+
+2. Hat verileri, dünya yüzeyinde tek boyutlu doğrusal unsurlar. Genellikle "SpatialLinesDataFrame" nesnesi olarak saklanır.
+
+3. Rota verileri, taşıma ağına tahsis edilmiş özel hat türleridir. Rotalar genellikle bir Route_Function ile rota ağına atanan düz bir “istek hattının” tahsis edilmesiyle sonuçlanır. Tesisat ağı, çakışan birçok rotayı temsil eder. Tümü genellikle "SpatialLinesDataFrame" nesnesi olarak saklanır.
+
+* OD, hat ve rota veri tipleri ile çalışmak veya oluşturmak için fonksiyon seçimleri aşağıda gösterilmiştir.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+table <- matrix(c("od_dist","Data frame","Numeric vector","od_id_order","Data frame","Data frame","line_bearing","Spital line","Numeric vector","line_midpoint","Spital line", "Spital points", "route_cyclestreets","Coordinates, spital point or text","Spital lines","route_graphhooper","Coordinates, spital point or text","Spital lines"), ncol=3,byrow=TRUE)
+ colnames(table) <- c("Function","Input data type(s)"," Output data type")
+ rownames(table)<-c(1,2,3,4,5,6)
+table<- as.table(table)
+table
+``` 
+### OD Verisi nedir?
+
+Başlangıç-varış (OD) verileri, bir başlangıç noktasından (O) bir varış noktasına (D) kadar coğrafi alan boyunca hareketi temsil eder. Bazen "akış verileri" olarak da adlandırılan OD veri kümeleri, iki coğrafi nokta veya daha yaygın olarak bölgeler (genellikle bir bölge merkezi ile temsil edilir) arasındaki yolculukların ayrıntılarını içerir. 
+Başlangıç ve varış noktaları arasındaki rotalara, coğrafi bilgilere *OSRM*, *Google Directions API*, *CycleStreets.net* or *OpenRouteServic*e gibi yönlendirme hizmetleri kullanılarak ulaşılabilir.
+
+* Birçok ulaşım planlama modelinin önemli bir bileşeni olan OD verileri, *stplanr* paketindeki verilere ve işlevlere dayalı örneklerle tanıtılmaktadır. Amaç, örneğin  otomobillerden  yürüyüş, bisiklete binme ve toplu taşıma gibi daha düşük enerji modellerine geçişe neden olabileceği 'istek çizgilerini' belirleyerek daha sürdürülebilir ulaşım planlarını bilgilendirmek için OD verilerini kullanmanızı sağlamaktır. 
+
+
+# Rota Örneği
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(osrm)
+#> Data: OpenStreetMap http://www.openstreetmap.org/copyright
+rota1 <- route(from = c(-0.11, 51.514),to = c(-0.10, 51.506),route_fun = osrmRoute,returnclass = "sf")
+mapview::mapview(rota1)
+
+```
+
+* *stplanr* ve *osrm* paketleriyle Londra'daki  Thames Nehri üzerinde Fleet Caddesi ile Southwark Caddesi arasındaki rota, route() fonksiyonu ile enlem/boylam  girişleri kullanılarak hesaplanmıştır. Mapview fonksiyonu yardımı ile görselleştirilmiştir.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+rota2 <- route(from = "Leeds",to = "Bradford",route_fun = osrmRoute,returnclass = "sf")
+mapview::mapview(rota2)
+
+```
+
+* Ayrıca Google Map API yönlendirme servisinden alınan  Leeds ve Bradford (Londra) bölgelerine ait harita bilgisi kullanılarak iki bölge arasındaki rota belirlenmiştir.
+
+
+## Coğrafi istek çizgilerinin (desire line) oluşturulması
+
+Coğrafi bölgeler arasında seyahat eden insan sayısını temsil eden başlangıç-varış (OD) verileri, ulaşım planlaması için önemlidir. OD verileri genellikle (wicid.ukdataservice.ac.uk/ gibi) toplu veri kaynaklarından alınır ve bu nedenle tüm ülkenin seyahat modellerini uygun boyutlu dosyalarda temsil edebilir.  Bir matris veya data frame olarak saklanabilirler. Aşağıda eğitim ve gösterim amacıyla stplanr ile sağlanan, Birleşik Krallık'taki yerleşim bölgeleri arasındaki evden işe gidip gelme sayısını temsil eden bir veri çerçevesi (data frame) olan *flow (akış) verisi* örneği gösterilmiştir.
+
+* *All* sütunu bölgeler arası seyehat eden kişi sayısını gösterirken *Bicycle* gibi sütunlar(caravan, train,metro, on foot) hangi aracın kaç kişi tarafından kullanıldığını gösterir.
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+data("flow", package = "stplanr")
+head(flow[c(1:3, 12)])
+```
+* Yukarıda görüntülenen akış verileri coğrafi alan üzerindeki hareketi tanımlasa da, açıkça coğrafi bilgi içermez. Bunun yerine, başlangıç ve varış noktalarının koordinatları aşağıda gösterildiği gibi ayrı bir coğrafi veri kümesiyle (cents veri kümesiyle temsil edilir) bağlantılıdır.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+data("cents", package = "stplanr")
+as.data.frame(cents[1:3, -c(3,4)])
+
+```
+
+* İki veri kümesini birbirine bağlamak için *od2line* fonksiyonu kullanılır.
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+l <- od2line(flow = flow, zones = cents)
+plot(l)
+```
+
+
+
+## Bisiklet Verisi Modellemesi
+
+*Stplanr* paketi  kullanılarak Open Street Maps'ten (OSM) alınan veriler *bikedata* paketi ile bisiklet paylaşımı verilerini de kullanabilir. bikedata paketi kullanılarak erişilebilen bisiklet paylaşım verileri, bisiklet paylaşım sistemlerinden başlangıç-varış (OD) akışları ürettiği için stplanr ile entegrasyon için uygundur. Bu veriler, olası yolları oluşturmak için *sum_network_links* fonksiyonu ile birlikte kullanılırlar.
+(Makalede veri seti ile ilgili bir bilgi verilmemiştir. Sadece görsel kullanılmıştır. bikedata paketi R'ın bu versiyonu için bulunamamıştır hatası alınmıştır. Detaylar için aşağıdaki linke tıklayabilirsiniz.
+[https://docs.ropensci.org/bikedata/articles/bikedata.html] )
+
+!["Newyork'taki ortak bisiklet rotalarının modellenmesi"](https://d3i71xaburhd42.cloudfront.net/ea4ea690898e795d7d7d8ab642ef566ec7b6bebd/6-Figure2-1.png)
+
+* Modelde turuncu çizgiler insanlar tarafından en çok kullanılan rotaları gösterirken (8.0000-100.000(+)) açık renkli rota çizgileri ise insanlar tarafından daha az tercih edilen rotları göstermektededir.
+
+
+# Rota Modellemesi
+
+* Aşağıda *Bradford* bölgesi ile *Leeds* bölgesi (Londra) arasındaki rota, **route_cyclestreests** fonksiyonu ile gösterilmiştir. Koordinat bilgileri *CycleStreets.net* yönlendirme servisinden alınmıştır.
+Bu fonksiyonun çalışması için bir API anahtarına ihtiyaç vardır. 
+
+[https://CycleStreets.net] adresinden API anahtarı talebinde bulunabilirsiniz.
+
+(Benim aldığım API şifresi: 114cd5e2a142f24a)
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+route_bl <- route_cyclestreets(from = "Bradford, Yorkshire", to = "Leeds, Yorkshire")
+route_c1_c2 <- route_cyclestreets(cents[1,], cents[2,])
+route_bl_raw <- route_cyclestreets(from = "Bradford", to = "Leeds", save_raw = TRUE)
+plot(route_network, lwd=0)
+## Kod R' da çalışmasına rağmen knit edildiğinde hata verdiği için html çıktısına konulmamıştır.Her satırdan sonra API key girilmesi gerekmektedir.
+```
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+routes_fast$All <- l$All
+rnet <- overline(routes_fast, "All", fun = sum)
+rnet$flow <- rnet$All / mean(rnet$All) * 3
+plot(rnet, lwd = rnet$flow / mean(rnet$flow))
+
+```
+
+
+# Seyahat Toplama Alanlarının Modellenmesi
+
+* Toplanma alanları, ulaşım planlamasında kullanılın önemli analitik ve görsel araçlardandır. Örneğin yeni bir otobüs durağından kimin yararlanacağına yardımcı olabilir ve coğrafi durumu örnekleyebilirler.
+Yolcuların genelde otobüs duraklarına 400 tren istasyonlarına ise 800 metreye kadar yürümeye istekli oldukları söylenmektedir.
+Stplanr paketi *calc_catchment* fonksiyonu ile düz çizgi (straight line) mesafelerini kullanarak toplanma alanlarını hesaplar.
+
+* *calc_catchment* ve *calc_network_catchment* fonksiyonları, toplama alanlarının hesaplanmasına izin veren tamamlayıcı fonksiyonlardır.
+
+* Aşağıda *calc_catcment* fonksiyonu ile Sidney'deki sokaklara hizalanmış bisiklet yollarını içeren *testcycleway* veri seti görselleştirilmiştir.
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+data_dir <- system.file("extdata", package = "stplanr")
+unzip(file.path(data_dir, 'smallsa1.zip'))
+unzip(file.path(data_dir, 'testcycleway.zip'))
+sa1income <- rgdal::readOGR(".", "smallsa1")
+testcycleway <- rgdal::readOGR(".", "testcycleway")
+
+file.remove(list.files(pattern = "^(smallsa1|testcycleway).*"))
+catch800m <- calc_catchment( polygonlayer = sa1income,targetlayer = testcycleway,calccols = c('Total'),
+  distance = 800,projection = 'austalbers',dissolve = TRUE)
+plot(sa1income, col = "light grey")
+plot(catch800m, col = rgb(1, 0, 0, 0.5), add = TRUE)
+plot(testcycleway, col = "green", add = TRUE)
+```
+
+* Yukarıdaki görselde Sidney'de düz çizgi mesafesini kullanan bir bisiklet yolu (yeşil) ile ilişkili 800 metrelik bir toplama alanı (kırmızı) gösterilmiştir.
+
+
+# Modelleme ve Görselleştirme
+
+* Şu anda mesafe azalmasını modellemek için kullanılabilir hiçbir fonksiyon bulunmamaktadır.(Ancak bu *stplanr* paketinin gelecekteki sürümlerine eklemek istenilen bir şeydir.)
+
+* Stplanr tarafından oluşturulan aynı nesneyi (l) kullanarak yürüyerek yapılan yolculukların oranı ile mesafe arasındaki ilişkiyi keşfedebiliriz.
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+l$d_euclidean <- line_length(l)
+l$d_rf <- routes_fast@data$length
+plot(l$d_euclidean, l$d_rf,xlab = "Öklid Mesafesi", ylab = "Rota Mesafesi")
+```
+
+```{r}
+l$pwalk <- l$On.foot / l$All
+plot(l$d_euclidean, l$pwalk, cex = l$All / 50,
+xlab = "Ökid Mesafesi (m)", ylab = "Yürüyerek yapılan yolculukların oranı")
+
+```
+
+* Öklid mesafesi ve en hızlı rota mesafesi (ilk görsel); Öklid mesafesi ile yürüyerek yapılan gezilerin oranı (ikinci görsel) gösterilmiştir.
+İkinci görsele bakıldığında yolculukların mesafesi ile yürüyerek yapılan yolculukların oranı arasında negatif bir ilişki olduğu gözlemlenmiştir. 
+
+* Belirli bir mesafenin ötesinde (yukarıdaki şekilde sunulan verilere göre yaklaşık 1,5 km) yürüme genellikle yavaş bir araç olduğu için diğer modeller(araçlar) dikkate alınır. Burdaki "mesafe azalması" doğrusal değildir ve bir dizi fonksiyonla  yaklaşık olarak tahmin edilebilir. 
+
+
+### Görselleştirme
+
+* Görselleştirme, araştırmacıların bulgularını diğer araştırmacılara ve  halka iletmesine olanak tanıdığından, herhangi bir ulaşım çalışmasının önemli bir yönüdür. Bu nedenle, stplanr'ın görselleştirme için hiçbir fonksiyon içermemesi şaşırtıcıdır. Bunun yerine, kullanıcılar *mapview*, *tmap*, *leaflet* ve *ggmap* gibi R'deki mevcut görselleştirme araçlarını kullanmaya teşvik edilir.
+
+## Makaleye genel bakış ve paketin geliştirilmesi
+
+Bu makalede, ulaşım planlamasının R programı ile yapılabileceğini gösterilmektedir. Stplanr paketi bilindiği kadarıyla uygulayıcıların ve araştırmacıların daha sürdürülebilir ulaşım sistemleri tasarlamasını sağlamayı amaçlayan ilk R paketidir ve  aynı şeyi yapan mevcut paketlerin olmaması, dikkatleri daha gelişmiş özelliklerden ziyade stplanr'ın temel işlevselliğine yönlendirmektedir. Örnek olarak yakın zamanda eklenen route_local fonksiyonu da dahil olmak üzere gelecekteki gelişmeler için bir destek sağlayabilecek SpatialLinesNetwork sınıfı verilebilir.
+
+* *stplanr* paketi ayrıca, uzay ve MCI gibi uzamsal taşıma verilerini kullanan diğer R paketleriyle birlikte de kullanılabilir.
+
+
+* Aslında ilk olarak İngiltere'deki ve Galler'deki tüm büyük bisiklet rotalarındaki bisiklet potansiyelini tahmin eden Döngüye Yönelik Eğilim Aracı (PCT) için veri oluşturmak üzere geliştirilmiştir.
+Ulaşım veri kümelerini analiz etmek için açık erişim veri paketlerinin kullanılabilirliğinin artmasıyla
+bu paketin, başka birçok ulusal ve uluslararası ulaşım planlaması sorununu çözmek için kullanılabileceğine inanılmaktadır.
+ 
+ 
+ 
+ 
+# KAYNAKÇA
+
+-> G. Boeing. OSMnx: New methods for acquiring, constructing, analyzing, and visualizing complex
+street networks. Computers, Environment and Urban Systems, 65:126–139, 2017. URL [https://doi.
+org/10.1016/j.compenvurbsys.2017.05.004.]
+
+-> [https://towardsdatascience.com/automating-running-routes-in-r-1e97eb4ed716]
+
+-> D. E. Boyce and H. C. W. L. Williams. Forecasting Urban Travel: Past, Present and Future. Edward Elgar
+Publishing, 2015. [p7]
+
+-> P. E. Brown. Maps, Coordinate Reference Systems and Visualising Geographic Data with mapmisc.
+The R ournal, 8(1):64–91, 2016. URL [https://journal.r-project.org/archive/2016/RJ-2016-
+005/index.html.] 
+ 
+-> P. E. Brown and L. Zhou. diseasemapping: Modelling Spatial Variation in Disease Risk for Areal Data,
+2016. URL [https://CRAN.R-project.org/package=diseasemapping] 
+
+-> L. M. Martínez and . M. Viegas. A new approach to modelling distance-decay functions for accessibility
+assessment in transport studies. Journal of Transport Geography, 26:87–96, 2013. URL[https://doi.
+org/10.1016/j.jtrangeo.2012.08.018.]
+
+-> [https://www.cyclestreets.net/]
+
+-> [https://rdrr.io/cran/stplanr/man/route_local.html]
+
+-> Lovelace, M. Birkin, P. Cross, and M. Clarke. From Big Noise to Big Data: Toward the Verification of
+Large Data sets for Understanding Regional Retail Flows. Geographical Analysis, 48(1):59–81, 2016.
+URL [https://doi.org/10.1111/gean.12081.]
+
+-> M. Diana. Studying Patterns of Use of Transport Modes Through Data Mining. Transportation Research
+Record: Journal of the Transportation Research Board, 2308:1–9, 2012. URL [https://doi.org/10.3141/
+2308-01]
+
+
+
+
+
+
